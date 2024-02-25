@@ -1,3 +1,18 @@
+// CPU 6802 Flags
+
+#[derive(Debug, PartialEq)]
+pub enum Flag {
+    Carry,
+    Zero,
+    Interrupt,
+    Decimal,
+    Break,
+    Unused,
+    Overflow,
+    Negative,
+}
+
+// Rest of the code...
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
@@ -14,6 +29,25 @@ impl CPU {
             program_counter: 0,
         }
     }
+
+    fn select_flag(flag: Flag) -> u8 {
+        match flag {
+            Flag::Zero => 0b0000_0010,
+            Flag::Carry => 0b0000_0001,
+            Flag::Interrupt => 0b0000_0100,
+            Flag::Decimal => 0b0000_1000,
+            Flag::Break => 0b0001_0000,
+            Flag::Unused => 0b0010_0000,
+            Flag::Overflow => 0b0100_0000,
+            Flag::Negative => 0b1000_0000,
+        }
+    }
+
+    // using for flip the binary
+    fn flip_flag(flag: Flag) -> u8 {
+        !Self::select_flag(flag)
+    }
+
     pub fn interpret(&mut self, program: Vec<u8>) {
         self.program_counter = 0;
         loop {
@@ -21,26 +55,33 @@ impl CPU {
             self.program_counter += 1;
 
             match opscode {
+                // LOAD / STORE Operations
+                // LDA, LDX, LDY , STA, STX, STY
+
+                // 0xA9 = LDA (Load Accumulator)
+                //
                 0xA9 => {
                     self.register_a = program[self.program_counter as usize];
                     self.program_counter += 1;
 
-                    println!("LDA immediate: 0x{:x}", self.register_a);
+                    // set Zero flag to register A
+                    // Zero flag is 0b0000_0010 or 2 (in decimal)
                     if self.register_a == 0 {
-                        self.status = self.status | 0b0000_0010;
+                        self.status |= Self::select_flag(Flag::Zero);
                     } else {
-                        self.status = self.status & 0b1111_1101;
+                        // FLIP Zero flag to 0b1111_1101 for clear
+                        self.status &= Self::flip_flag(Flag::Zero);
                     }
 
-                    if self.register_a & 0b1000_0000 != 0 {
-                        self.status = self.status | 0b1000_0000;
+                    if self.register_a & Self::select_flag(Flag::Negative) != 0 {
+                        self.status |= Self::select_flag(Flag::Negative);
                     } else {
-                        self.status = self.status & 0b0111_1111;
+                        self.status &= Self::flip_flag(Flag::Negative);
                     }
                 }
 
+                // END OF LOAD / STORE Operations
                 0xAA => {
-                    println!("TAX");
                     self.register_x = self.register_a;
                     if self.register_x == 0 {
                         self.status = self.status | 0b0000_0010;
