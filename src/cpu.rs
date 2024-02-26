@@ -2,14 +2,18 @@
 
 #[derive(Debug, PartialEq)]
 pub enum Flag {
-    Carry,
-    Zero,
-    Interrupt,
-    Decimal,
-    Break,
-    Unused,
-    Overflow,
-    Negative,
+    Carry = 0b0000_0001,
+    Zero = 0b0000_0010,
+    Interrupt = 0b0000_0100,
+    Decimal = 0b0000_1000,
+    Break = 0b0001_0000,
+    Unused = 0b0010_0000,
+    Overflow = 0b0100_0000,
+    Negative = 0b1000_0000,
+}
+
+enum AddressingMode {
+    //
 }
 
 pub struct CPU {
@@ -27,24 +31,6 @@ impl CPU {
             status: 0,
             program_counter: 0,
         }
-    }
-
-    pub fn select_flag(flag: Flag) -> u8 {
-        match flag {
-            Flag::Zero => 0b0000_0010,
-            Flag::Carry => 0b0000_0001,
-            Flag::Interrupt => 0b0000_0100,
-            Flag::Decimal => 0b0000_1000,
-            Flag::Break => 0b0001_0000,
-            Flag::Unused => 0b0010_0000,
-            Flag::Overflow => 0b0100_0000,
-            Flag::Negative => 0b1000_0000,
-        }
-    }
-
-    // using for flip the binary
-    fn flip_flag(flag: Flag) -> u8 {
-        !Self::select_flag(flag)
     }
 
     pub fn interpret(&mut self, program: Vec<u8>) {
@@ -71,16 +57,16 @@ impl CPU {
                         // set Zero flag to register A
                         // Zero flag is 0b0000_0010 or 2 (in decimal)
                         if self.register_a == 0 {
-                            self.status |= Self::select_flag(Flag::Zero);
+                            self.status |= Flag::Zero as u8;
                         } else {
                             // FLIP Zero flag to 0b1111_1101 for clear
-                            self.status &= Self::flip_flag(Flag::Zero);
+                            self.status &= !(Flag::Zero as u8);
                         }
 
-                        if self.register_a & Self::select_flag(Flag::Negative) != 0 {
-                            self.status |= Self::select_flag(Flag::Negative);
+                        if self.register_a & Flag::Negative as u8 != 0 {
+                            self.status |= Flag::Negative as u8;
                         } else {
-                            self.status &= Self::flip_flag(Flag::Negative);
+                            self.status &= !(Flag::Negative as u8);
                         }
                     }
 
