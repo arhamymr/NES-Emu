@@ -13,7 +13,7 @@ pub enum Flag {
 }
 
 enum AddressingMode {
-    //
+    // todo !!
 }
 
 pub struct CPU {
@@ -33,6 +33,40 @@ impl CPU {
         }
     }
 
+    fn update_zero_and_negative_flag(&mut self) {
+        // set Zero flag to register A
+        // if register A is = 0b0000_0000
+        if self.register_a == 0 {
+            // Status set as Zero flag (0b0000_0010)
+            self.status |= Flag::Zero as u8;
+        } else {
+            // if register A != 0
+            // clear zero flag by using bitwise AND
+            self.status &= !(Flag::Zero as u8);
+        }
+
+        // if register A is = 0b11100000
+        // compare register A with 0b1000_0000
+        // 0b1110_0000 & 0b1000_0000 = 0b1000_0000 (128) Negative flag
+        // Check MSB (Most Significant Bit) register A is 1
+        // Register A AND Negative Flag != 0 or result equal to 128 (0b1000_0000)
+        if self.register_a & Flag::Negative as u8 != 0 {
+            // Status set as Negative flag
+            // Register Status now is for example in zero flag
+            // Status = 0b000_0010
+            // set negative flag
+            // now status is 0b1000_0010
+            self.status |= Flag::Negative as u8;
+        } else {
+            // if current accumulator is not negative
+            // clear negative flag by using bitwise AND
+            // and flip the negative flag to 0b0111_1111
+            // Status = 0b000_0010 (zero flag)
+            // 0b0000_0010 & 0b0111_1111 = 0b0000_0010
+            self.status &= !(Flag::Negative as u8);
+        }
+    }
+
     pub fn interpret(&mut self, program: Vec<u8>) {
         self.program_counter = 0;
         loop {
@@ -48,28 +82,23 @@ impl CPU {
                     // -----------------------------
 
                     // LDA (Load Accumulator)
+
                     // Addresing mode
+
                     // Immediate (0xA9)
                     0xA9 => {
                         self.register_a = program[self.program_counter as usize];
                         self.program_counter += 1;
-
-                        // set Zero flag to register A
-                        // Zero flag is 0b0000_0010 or 2 (in decimal)
-                        if self.register_a == 0 {
-                            self.status |= Flag::Zero as u8;
-                        } else {
-                            // FLIP Zero flag to 0b1111_1101 for clear
-                            self.status &= !(Flag::Zero as u8);
-                        }
-
-                        if self.register_a & Flag::Negative as u8 != 0 {
-                            self.status |= Flag::Negative as u8;
-                        } else {
-                            self.status &= !(Flag::Negative as u8);
-                        }
+                        self.update_zero_and_negative_flag();
                     }
 
+                    // Zero Page (0xA5)
+                    0xA5 => {
+                        let zero_page_address = program[self.program_counter as usize];
+                        self.register_a = program[zero_page_address as usize];
+                        self.update_zero_and_negative_flag();
+                        self.program_counter += 1;
+                    }
                     // END OF LOAD / STORE Operations
                     // 0xAA => {
                     //     self.register_x = self.register_a;
@@ -131,9 +160,9 @@ mod test {
     #[test]
     fn test_0xa9_lda_negative_flag() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xa9, 0x80, 0x00]);
+        cpu.interpret(vec![0xa9, 0xE0, 0x00]);
 
-        assert_eq!(cpu.register_a, 128);
+        assert_eq!(cpu.register_a, 224);
         assert_eq!(cpu.status, 128) //
     }
 }
