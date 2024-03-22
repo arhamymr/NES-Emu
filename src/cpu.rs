@@ -21,6 +21,7 @@ pub struct CPU {
     pub register_x: u8,
     pub status: u8,
     pub program_counter: u16,
+    pub memory: [u8; 65536],
 }
 
 impl CPU {
@@ -30,6 +31,21 @@ impl CPU {
             register_x: 0,
             status: 0,
             program_counter: 0,
+            memory: [0; 65536],
+        }
+    }
+
+    fn read_memory(&self, address: u16) -> u8 {
+        self.memory[address as usize]
+    }
+
+    fn write_memory(&mut self, address: u16, value: u8) {
+        self.memory[address as usize] = value;
+    }
+
+    fn load_program_into_memory(&mut self, program: Vec<u8>) {
+        for (i, &byte) in program.iter().enumerate() {
+            self.write_memory(i as u16, byte);
         }
     }
 
@@ -48,7 +64,7 @@ impl CPU {
         // if register A is = 0b11100000
         // compare register A with 0b1000_0000
         // 0b1110_0000 & 0b1000_0000 = 0b1000_0000 (128) Negative flag
-        // Check MSB (Most Significant Bit) register A is 1
+        // Check MSB (Most Significant Bit) register A set to 1
         // Register A AND Negative Flag != 0 or result equal to 128 (0b1000_0000)
         if self.register_a & Flag::Negative as u8 != 0 {
             // Status set as Negative flag
@@ -67,65 +83,68 @@ impl CPU {
         }
     }
 
+    fn lda(&mut self) {
+        let operand = self.fetch_byte();
+        self.register_a = operand;
+        self.update_zero_and_negative_flag();
+    }
+
+    fn fetch_byte(&mut self) -> u8 {
+        let byte = self.read_memory(self.program_counter);
+        self.program_counter += 1;
+        byte
+    }
+
     pub fn interpret(&mut self, program: Vec<u8>) {
+        self.load_program_into_memory(program);
         self.program_counter = 0;
         loop {
-            let opscode = program.get(self.program_counter as usize);
+            let opscode = self.memory[self.program_counter as usize];
             // get opscode and go to next instruction
             self.program_counter += 1;
 
-            if let Some(opscode) = opscode {
-                match opscode {
-                    // -----------------------------
-                    // LOAD / STORE Operations
-                    // LDA, LDX, LDY , STA, STX, STY
-                    // -----------------------------
+            match opscode {
+                // -----------------------------
+                // LOAD / STORE Operations
+                // LDA, LDX, LDY , STA, STX, STY
+                // -----------------------------
 
-                    // LDA (Load Accumulator)
+                // LDA (Load Accumulator)
 
-                    // Addresing mode
+                // Addresing mode
 
-                    // Immediate (0xA9)
-                    0xA9 => {
-                        self.register_a = program[self.program_counter as usize];
-                        self.program_counter += 1;
-                        self.update_zero_and_negative_flag();
-                    }
-
-                    // Zero Page (0xA5)
-                    0xA5 => {
-                        let zero_page_address = program[self.program_counter as usize];
-                        self.register_a = program[zero_page_address as usize];
-                        self.update_zero_and_negative_flag();
-                        self.program_counter += 1;
-                    }
-                    // END OF LOAD / STORE Operations
-                    // 0xAA => {
-                    //     self.register_x = self.register_a;
-                    //     if self.register_x == 0 {
-                    //         self.status = self.status | 0b0000_0010;
-                    //     } else {
-                    //         self.status = self.status & 0b1111_1101;
-                    //     }
-
-                    //     if self.register_x & 0b1000_0000 != 0 {
-                    //         self.status = self.status | 0b1000_0000;
-                    //     } else {
-                    //         self.status = self.status & 0b0111_1111;
-                    //     }
-                    // }
-                    0x00 => {
-                        println!("BRK");
-                        break;
-                    }
-                    _ => {
-                        println!("Unrecognized opscode: {:x}", opscode);
-                        break;
-                    }
+                // Immediate (0xA9)
+                0xA9 => {
+                    self.lda();
                 }
-            } else {
-                println!("Program out of bound");
-                break;
+
+                // Zero Page (0xA5)
+                0xA5 => {
+                    self.lda();
+                }
+                // END OF LOAD / STORE Operations
+                // 0xAA => {
+                //     self.register_x = self.register_a;
+                //     if self.register_x == 0 {
+                //         self.status = self.status | 0b0000_0010;
+                //     } else {
+                //         self.status = self.status & 0b1111_1101;
+                //     }
+
+                //     if self.register_x & 0b1000_0000 != 0 {
+                //         self.status = self.status | 0b1000_0000;
+                //     } else {
+                //         self.status = self.status & 0b0111_1111;
+                //     }
+                // }
+                0x00 => {
+                    println!("BRK");
+                    break;
+                }
+                _ => {
+                    println!("Unrecognized opscode: {:x}", opscode);
+                    break;
+                }
             }
         }
     }
