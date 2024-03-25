@@ -13,12 +13,20 @@ pub enum Flag {
 }
 
 enum AddressingMode {
-    // todo !!
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    IndirectX,
+    IndirectY,
 }
 
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
+    pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
     pub memory: [u8; 65536],
@@ -29,6 +37,7 @@ impl CPU {
         CPU {
             register_a: 0,
             register_x: 0,
+            register_y: 0,
             status: 0,
             program_counter: 0,
             memory: [0; 65536],
@@ -41,6 +50,28 @@ impl CPU {
 
     fn write_memory(&mut self, address: u16, value: u8) {
         self.memory[address as usize] = value;
+    }
+
+    // Read memory and merge 2 bytees into 16 bit
+    // 0x00FF (low byte) and 0xFF00 (high byte)
+    // merge with bitwise OR
+    // to get 0xFFFF
+    fn read_memory_16bit(&self, address: u16) -> u16 {
+        let low_byte = self.read_memory(address) as u16;
+        let high_byte = self.read_memory(address + 1) as u16;
+        (high_byte << 8) | low_byte
+    }
+
+    // split 16 bit data into 2 bytes and write to memory
+    // 0xFFFF split into 0x00FF and 0xFF00
+    fn write_memory_16bit(&mut self, address: u16, value: u16) {
+        let low_byte = value as u8;
+        let high_byte = (value >> 8) as u8;
+
+        // little endian format
+        // lowbite first and highbyte second
+        self.write_memory(address, low_byte);
+        self.write_memory(address + 1, high_byte);
     }
 
     fn load_program_into_memory(&mut self, program: Vec<u8>) {
@@ -83,16 +114,51 @@ impl CPU {
         }
     }
 
-    fn lda(&mut self) {
-        let operand = self.fetch_byte();
-        self.register_a = operand;
-        self.update_zero_and_negative_flag();
-    }
-
-    fn fetch_byte(&mut self) -> u8 {
-        let byte = self.read_memory(self.program_counter);
+    fn lda(&mut self, mode: AddressingMode) {
+        match mode {
+            AddressingMode::Immediate => {
+                let value = self.read_memory(self.program_counter);
+                self.register_a = value;
+            }
+            AddressingMode::ZeroPage => {
+                let zero_page_address = self.read_memory(self.program_counter) as u16;
+                self.register_a = self.read_memory(zero_page_address);
+            }
+            AddressingMode::ZeroPageX => {
+                let base = self.read_memory(self.program_counter as u16);
+                let zero_page_address = base.wrapping_add(self.register_x);
+                self.register_a = self.read_memory(zero_page_address as u16);
+            }
+            AddressingMode::Absolute => {
+                let address = self.read_memory_16bit(self.program_counter);
+                self.register_a = self.read_memory(address);
+                self.program_counter += 1;
+            }
+            AddressingMode::AbsoluteX => {
+                let address = self.read_memory_16bit(self.program_counter);
+                let final_address = address.wrapping_add(self.register_x as u16);
+                self.register_a = self.read_memory(final_address);
+                self.program_counter += 1;
+            }
+            AddressingMode::AbsoluteY => {
+                let address = self.read_memory_16bit(self.program_counter);
+                let final_address = address.wrapping_add(self.register_y as u16);
+                self.register_a = self.read_memory(final_address);
+                self.program_counter += 1;
+            }
+            AddressingMode::IndirectX => {
+                let base = self.read_memory(self.program_counter) as u16;
+                let final_address = base.wrapping_add(self.register_x as u16);
+                self.register_a = self.read_memory(final_address as u16);
+            }
+            AddressingMode::IndirectY => {
+                let base = self.read_memory(self.program_counter) as u16;
+                let final_address = base.wrapping_add(self.register_y as u16);
+                self.register_a = self.read_memory(final_address as u16);
+            }
+        };
         self.program_counter += 1;
-        byte
+        self.update_zero_and_negative_flag();
     }
 
     pub fn interpret(&mut self, program: Vec<u8>) {
@@ -110,33 +176,16 @@ impl CPU {
                 // -----------------------------
 
                 // LDA (Load Accumulator)
+                0xA9 => self.lda(AddressingMode::Immediate),
+                0xA5 => self.lda(AddressingMode::ZeroPage),
+                0xB5 => self.lda(AddressingMode::ZeroPageX),
+                0xAD => self.lda(AddressingMode::Absolute),
+                0xBD => self.lda(AddressingMode::AbsoluteX),
+                0xB9 => self.lda(AddressingMode::AbsoluteY),
+                0xA1 => self.lda(AddressingMode::IndirectX),
+                0xB1 => self.lda(AddressingMode::IndirectY),
 
-                // Addresing mode
-
-                // Immediate (0xA9)
-                0xA9 => {
-                    self.lda();
-                }
-
-                // Zero Page (0xA5)
-                0xA5 => {
-                    self.lda();
-                }
                 // END OF LOAD / STORE Operations
-                // 0xAA => {
-                //     self.register_x = self.register_a;
-                //     if self.register_x == 0 {
-                //         self.status = self.status | 0b0000_0010;
-                //     } else {
-                //         self.status = self.status & 0b1111_1101;
-                //     }
-
-                //     if self.register_x & 0b1000_0000 != 0 {
-                //         self.status = self.status | 0b1000_0000;
-                //     } else {
-                //         self.status = self.status & 0b0111_1111;
-                //     }
-                // }
                 0x00 => {
                     println!("BRK");
                     break;
@@ -158,15 +207,7 @@ impl CPU {
 mod test {
     use super::*;
 
-    #[test]
-    fn test_0xa9_lda_immediate_load_data() {
-        let mut cpu = CPU::new();
-        cpu.interpret(vec![0xa9, 0x05, 0x00]);
-        assert_eq!(cpu.register_a, 5); // load 5 to register 5
-                                       // The Zero flag should be clear
-        assert_eq!(cpu.status & 0b0000_0010, 0);
-        assert_eq!(cpu.status & 0b1000_0000, 0);
-    }
+    // LDA FLAG TEST
 
     #[test]
     fn test_0xa9_lda_zero_flag() {
@@ -183,5 +224,78 @@ mod test {
 
         assert_eq!(cpu.register_a, 224);
         assert_eq!(cpu.status, 128) //
+    }
+
+    // LDA ADDRESSING MODE
+
+    #[test]
+    fn test_0xa9_lda_immediate() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa9, 0x05, 0x00]);
+        assert_eq!(cpu.register_a, 5); // load 5 to register 5
+                                       // The Zero flag should be clear
+        assert_eq!(cpu.status & 0b0000_0010, 0);
+        assert_eq!(cpu.status & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_0xa5_lda_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.memory[0x84] = 0x37; // Set up memory so that address 0x84 contains the value 0x37
+        cpu.interpret(vec![0xa5, 0x84, 0x00]); // Execute LDA with zero page addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xb5_lda_zero_page_x() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x05;
+        cpu.memory[0x80 + cpu.register_x as usize] = 0x37; // Set up memory so that address 0x80 + X contains the value 0x37
+        cpu.interpret(vec![0xb5, 0x80, 0x00]); // Execute LDA with zero page X addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xad_lda_absolute() {
+        let mut cpu = CPU::new();
+        cpu.memory[0x1234] = 0x37; // Set up memory so that address 0x1234 contains the value 0x37
+        cpu.interpret(vec![0xad, 0x34, 0x12]); // Execute LDA with absolute addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xbd_lda_absolute_x() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x05;
+        cpu.memory[0x1234 + cpu.register_x as usize] = 0x37; // Set up memory so that address 0x1234 + X contains the value 0x37
+        cpu.interpret(vec![0xbd, 0x34, 0x12]); // Execute LDA with absolute X addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xb9_lda_absolute_y() {
+        let mut cpu = CPU::new();
+        cpu.register_y = 0x05;
+        cpu.memory[0x1234 + cpu.register_y as usize] = 0x37; // Set up memory so that address 0x1234 + Y contains the value 0x37
+        cpu.interpret(vec![0xb9, 0x34, 0x12]); // Execute LDA with absolute Y addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xa1_lda_indirect_x() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x05;
+        cpu.memory[0x84 + cpu.register_x as usize] = 0x37; // Set up memory so that address 0x84 + X contains the value 0x37
+        cpu.interpret(vec![0xa1, 0x84, 0x00]); // Execute LDA with indirect X addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xb1_lda_indirect_y() {
+        let mut cpu = CPU::new();
+        cpu.register_y = 0x05;
+        cpu.memory[0x84 + cpu.register_y as usize] = 0x37; // Set up memory so that address 0x84 contains the value 0x37
+        cpu.interpret(vec![0xb1, 0x84, 0x00]); // Execute LDA with indirect Y addressing mode
+        assert_eq!(cpu.register_a, 0x37); // Check that register_a contains the value 0x37
     }
 }
