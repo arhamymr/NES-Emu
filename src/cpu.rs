@@ -174,12 +174,41 @@ impl CPU {
         self.update_zero_and_negative_flag(self.register_a);
     }
 
-    // LDX
+    // LDX (Load X Register)
     fn ldx(&mut self, mode: AddressingMode) {
         let address = self.select_addressing_mode(mode);
         self.register_x = self.read_memory(address);
         self.program_counter += 1;
         self.update_zero_and_negative_flag(self.register_x);
+    }
+
+    // LDY (Load Y Register)
+    fn ldy(&mut self, mode: AddressingMode) {
+        let address = self.select_addressing_mode(mode);
+        self.register_y = self.read_memory(address);
+        self.program_counter += 1;
+        self.update_zero_and_negative_flag(self.register_y);
+    }
+
+    // STA (Store Accumulator)
+    fn sta(&mut self, mode: AddressingMode) {
+        let address = self.select_addressing_mode(mode);
+        self.write_memory(address, self.register_a);
+        self.program_counter += 1;
+    }
+
+    // STX (Store X Register)
+    fn stx(&mut self, mode: AddressingMode) {
+        let address = self.select_addressing_mode(mode);
+        self.write_memory(address, self.register_x);
+        self.program_counter += 1;
+    }
+
+    // STY (Store Y Register)
+    fn sty(&mut self, mode: AddressingMode) {
+        let address = self.select_addressing_mode(mode);
+        self.write_memory(address, self.register_y);
+        self.program_counter += 1;
     }
 
     pub fn interpret(&mut self, program: Vec<u8>) {
@@ -206,12 +235,39 @@ impl CPU {
                 0xA1 => self.lda(AddressingMode::IndirectX),
                 0xB1 => self.lda(AddressingMode::IndirectY),
 
-                // LDX (Load )
+                // LDX (Load X Register)
                 0xA2 => self.ldx(AddressingMode::Immediate),
                 0xA6 => self.ldx(AddressingMode::ZeroPage),
                 0xB6 => self.ldx(AddressingMode::ZeroPageY),
                 0xAE => self.ldx(AddressingMode::Absolute),
                 0xBE => self.ldx(AddressingMode::AbsoluteY),
+
+                // LDY (Load Y Register)
+                0xA0 => self.ldy(AddressingMode::Immediate),
+                0xA4 => self.ldy(AddressingMode::ZeroPage),
+                0xB4 => self.ldy(AddressingMode::ZeroPageX),
+                0xAC => self.ldy(AddressingMode::Absolute),
+                0xBC => self.ldy(AddressingMode::AbsoluteX),
+
+                // STA (Store Accumulator)
+                0x85 => self.sta(AddressingMode::ZeroPage),
+                0x95 => self.sta(AddressingMode::ZeroPageX),
+                0x8D => self.sta(AddressingMode::Absolute),
+                0x9D => self.sta(AddressingMode::AbsoluteX),
+                0x99 => self.sta(AddressingMode::AbsoluteY),
+                0x81 => self.sta(AddressingMode::IndirectX),
+                0x91 => self.sta(AddressingMode::IndirectY),
+
+                // STX (Store X Register)
+                0x86 => self.stx(AddressingMode::ZeroPage),
+                0x96 => self.stx(AddressingMode::ZeroPageY),
+                0x8E => self.stx(AddressingMode::Absolute),
+
+                // STY (Store Y Register)
+                0x84 => self.sty(AddressingMode::ZeroPage),
+                0x94 => self.sty(AddressingMode::ZeroPageX),
+                0x8C => self.sty(AddressingMode::Absolute),
+
                 // END OF LOAD / STORE Operations
                 0x00 => {
                     println!("BRK");
@@ -398,5 +454,196 @@ mod test {
         cpu.memory[0x1234 + cpu.register_y as usize] = 0x37; // Set up memory so that address 0x1234 + Y contains the value 0x37
         cpu.interpret(vec![0xbe, 0x34, 0x12]); // Execute LDX with absolute Y addressing mode
         assert_eq!(cpu.register_x, 0x37); // Check that register_x contains the value 0x37
+    }
+
+    // LDY (Load Y Register)
+
+    // LDY STATUS FLAG
+
+    #[test]
+    fn test_0xa0_ldy_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa0, 0x00, 0x00]);
+        assert_eq!(cpu.register_y, 0);
+        assert_eq!(cpu.status, 2); // 2 is zero flag 0b10
+    }
+
+    #[test]
+    fn test_0xa0_ldy_negative_flag() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa0, 0xE0, 0x00]);
+
+        assert_eq!(cpu.register_y, 224);
+        assert_eq!(cpu.status, 128) //
+    }
+
+    // LDY ADDRESSING MODE
+    #[test]
+    fn test_0xa0_ldy_immediate() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa0, 0x05, 0x00]);
+        assert_eq!(cpu.register_y, 5); // load 5 to register 5
+                                       // The Zero flag should be clear
+        assert_eq!(cpu.status & 0b0000_0010, 0);
+        assert_eq!(cpu.status & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_0xa4_ldy_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.memory[0x84] = 0x37; // Set up memory so that address 0x84 contains the value 0x37
+        cpu.interpret(vec![0xa4, 0x84, 0x00]); // Execute LDY with zero page addressing mode
+        assert_eq!(cpu.register_y, 0x37); // Check that register_y contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xb4_ldy_zero_page_x() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x05;
+        cpu.memory[0x80 + cpu.register_x as usize] = 0x37; // Set up memory so that address 0x80 + X contains the value 0x37
+        cpu.interpret(vec![0xb4, 0x80, 0x00]); // Execute LDY with zero page X addressing mode
+        assert_eq!(cpu.register_y, 0x37); // Check that register_y contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xac_ldy_absolute() {
+        let mut cpu = CPU::new();
+        cpu.memory[0x1234] = 0x37; // Set up memory so that address 0x1234 contains the value 0x37
+        cpu.interpret(vec![0xac, 0x34, 0x12]); // Execute LDY with absolute addressing mode
+        assert_eq!(cpu.register_y, 0x37); // Check that register_y contains the value 0x37
+    }
+
+    #[test]
+    fn test_0xbc_ldy_absolute_x() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x05;
+        cpu.memory[0x1234 + cpu.register_x as usize] = 0x37; // Set up memory so that address 0x1234 + X contains the value 0x37
+        cpu.interpret(vec![0xbc, 0x34, 0x12]); // Execute LDY with absolute X addressing mode
+        assert_eq!(cpu.register_y, 0x37); // Check that register_y contains the value 0x37
+    }
+
+    // STA (Store Accumulator)
+
+    // STA ADDRESSING MODE
+
+    #[test]
+    fn test_0x85_sta_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.interpret(vec![0x85, 0x84, 0x00]); // Execute STA with zero page addressing mode
+        assert_eq!(cpu.memory[0x84], 0x37); // Check that memory address 0x84 contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x95_sta_zero_page_x() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.register_x = 0x05;
+        cpu.interpret(vec![0x95, 0x80, 0x00]); // Execute STA with zero page X addressing mode
+        assert_eq!(cpu.memory[0x80 + cpu.register_x as usize], 0x37); // Check that memory address 0x80 + X contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x8d_sta_absolute() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.interpret(vec![0x8d, 0x34, 0x12]); // Execute STA with absolute addressing mode
+        assert_eq!(cpu.memory[0x1234], 0x37); // Check that memory address 0x1234 contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x9d_sta_absolute_x() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.register_x = 0x05;
+        cpu.interpret(vec![0x9d, 0x34, 0x12]); // Execute STA with absolute X addressing mode
+        assert_eq!(cpu.memory[0x1234 + cpu.register_x as usize], 0x37); // Check that memory address 0x1234 + X contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x99_sta_absolute_y() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.register_y = 0x05;
+        cpu.interpret(vec![0x99, 0x34, 0x12]); // Execute STA with absolute Y addressing mode
+        assert_eq!(cpu.memory[0x1234 + cpu.register_y as usize], 0x37); // Check that memory address 0x1234 + Y contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x81_sta_indirect_x() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.register_x = 0x05;
+        cpu.memory[0x84 + cpu.register_x as usize] = 0x37; // Set up memory so that address 0x84 + X contains the value 0x37
+        cpu.interpret(vec![0x81, 0x84, 0x00]); // Execute STA with indirect X addressing mode
+        assert_eq!(cpu.memory[0x84 + cpu.register_x as usize], 0x37); // Check that memory address 0x84 + X contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x91_sta_indirect_y() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.register_y = 0x05;
+        cpu.memory[0x84] = 0x37; // Set up memory so that address 0x84 contains the value 0x37
+        cpu.interpret(vec![0x91, 0x84, 0x00]); // Execute STA with indirect Y addressing mode
+        assert_eq!(cpu.memory[0x84 + cpu.register_y as usize], 0x37); // Check that memory address 0x84 + Y contains the value 0x37
+    }
+
+    // STX (Store X Register)
+
+    // STX ADDRESSING MODE
+
+    #[test]
+    fn test_0x86_stx_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x37; // Set up register_x so that it contains the value 0x37
+        cpu.interpret(vec![0x86, 0x84, 0x00]); // Execute STX with zero page addressing mode
+        assert_eq!(cpu.memory[0x84], 0x37); // Check that memory address 0x84 contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x96_stx_zero_page_y() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x37; // Set up register_x so that it contains the value 0x37
+        cpu.register_y = 0x05;
+        cpu.interpret(vec![0x96, 0x80, 0x00]); // Execute STX with zero page Y addressing mode
+        assert_eq!(cpu.memory[0x80 + cpu.register_y as usize], 0x37); // Check that memory address 0x80 + Y contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x8e_stx_absolute() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x37; // Set up register_x so that it contains the value 0x37
+        cpu.interpret(vec![0x8e, 0x34, 0x12]); // Execute STX with absolute addressing mode
+        assert_eq!(cpu.memory[0x1234], 0x37); // Check that memory address 0x1234 contains the value 0x37
+    }
+
+    // STY (Store Y Register)
+
+    // STY ADDRESSING MODE
+
+    #[test]
+    fn test_0x84_sty_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.register_y = 0x37; // Set up register_y so that it contains the value 0x37
+        cpu.interpret(vec![0x84, 0x84, 0x00]); // Execute STY with zero page addressing mode
+        assert_eq!(cpu.memory[0x84], 0x37); // Check that memory address 0x84 contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x94_sty_zero_page_x() {
+        let mut cpu = CPU::new();
+        cpu.register_y = 0x37; // Set up register_y so that it contains the value 0x37
+        cpu.register_x = 0x05;
+        cpu.interpret(vec![0x94, 0x80, 0x00]); // Execute STY with zero page X addressing mode
+        assert_eq!(cpu.memory[0x80 + cpu.register_x as usize], 0x37); // Check that memory address 0x80 + X contains the value 0x37
+    }
+
+    #[test]
+    fn test_0x8c_sty_absolute() {
+        let mut cpu = CPU::new();
+        cpu.register_y = 0x37; // Set up register_y so that it contains the value 0x37
+        cpu.interpret(vec![0x8c, 0x34, 0x12]); // Execute STY with absolute addressing mode
+        assert_eq!(cpu.memory[0x1234], 0x37); // Check that memory address 0x1234 contains the value 0x37
     }
 }
