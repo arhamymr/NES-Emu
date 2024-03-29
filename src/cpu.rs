@@ -1,7 +1,4 @@
 // CPU 6802 Flags
-
-use std::ops::Add;
-
 #[derive(Debug, PartialEq)]
 pub enum Flag {
     Carry = 0b0000_0001,
@@ -47,6 +44,14 @@ impl CPU {
         }
     }
 
+    fn set_flag(&mut self, flag: Flag, condition: bool) {
+        if condition {
+            self.status |= flag as u8;
+        } else {
+            self.status &= !(flag as u8);
+        }
+    }
+
     fn read_memory(&self, address: u16) -> u8 {
         self.memory[address as usize]
     }
@@ -83,38 +88,27 @@ impl CPU {
         }
     }
 
-    fn update_zero_and_negative_flag(&mut self, register: u8) {
-        // set Zero flag to register A
-        // if register A is = 0b0000_0000
-        if register == 0 {
-            // Status set as Zero flag (0b0000_0010)
-            self.status |= Flag::Zero as u8;
-        } else {
-            // if register A != 0
-            // clear zero flag by using bitwise AND
-            self.status &= !(Flag::Zero as u8);
-        }
+    // fn update_break_command_flag(&mut self, set: bool) {
+    //     if set {
+    //         self.status |= Flag::Break as u8;
+    //     } else {
+    //         self.status &= !(Flag::Break as u8);
+    //     }
+    // }
 
-        // if register A is = 0b11100000
-        // compare register A with 0b1000_0000
-        // 0b1110_0000 & 0b1000_0000 = 0b1000_0000 (128) Negative flag
-        // Check MSB (Most Significant Bit) register A set to 1
-        // Register A AND Negative Flag != 0 or result equal to 128 (0b1000_0000)
-        if register & Flag::Negative as u8 != 0 {
-            // Status set as Negative flag
-            // Register Status now is for example in zero flag
-            // Status = 0b000_0010
-            // set negative flag
-            // now status is 0b1000_0010
-            self.status |= Flag::Negative as u8;
-        } else {
-            // if current accumulator is not negative
-            // clear negative flag by using bitwise AND
-            // and flip the negative flag to 0b0111_1111
-            // Status = 0b000_0010 (zero flag)
-            // 0b0000_0010 & 0b0111_1111 = 0b0000_0010
-            self.status &= !(Flag::Negative as u8);
-        }
+    fn set_zero_flag(&mut self, register: u8) {
+        // if register = 0b0000_0000
+        // set Zero flag to register
+        self.set_flag(Flag::Zero, register == 0);
+    }
+
+    fn set_negative_flag(&mut self, register: u8) {
+        self.set_flag(Flag::Negative, register & Flag::Negative as u8 != 0);
+    }
+
+    fn set_zero_negative_flag(&mut self, register: u8) {
+        self.set_zero_flag(register);
+        self.set_negative_flag(register);
     }
 
     fn select_addressing_mode(&mut self, mode: AddressingMode) -> u16 {
@@ -171,7 +165,7 @@ impl CPU {
         let address = self.select_addressing_mode(mode);
         self.register_a = self.read_memory(address);
         self.program_counter += 1;
-        self.update_zero_and_negative_flag(self.register_a);
+        self.set_zero_negative_flag(self.register_a);
     }
 
     // LDX (Load X Register)
@@ -179,7 +173,7 @@ impl CPU {
         let address = self.select_addressing_mode(mode);
         self.register_x = self.read_memory(address);
         self.program_counter += 1;
-        self.update_zero_and_negative_flag(self.register_x);
+        self.set_zero_negative_flag(self.register_x);
     }
 
     // LDY (Load Y Register)
@@ -187,7 +181,7 @@ impl CPU {
         let address = self.select_addressing_mode(mode);
         self.register_y = self.read_memory(address);
         self.program_counter += 1;
-        self.update_zero_and_negative_flag(self.register_y);
+        self.set_zero_negative_flag(self.register_y);
     }
 
     // STA (Store Accumulator)
@@ -208,6 +202,49 @@ impl CPU {
     fn sty(&mut self, mode: AddressingMode) {
         let address = self.select_addressing_mode(mode);
         self.write_memory(address, self.register_y);
+        self.program_counter += 1;
+    }
+
+    // -----------------------------
+    // Register Transfer
+    // TAX, TAY, TXA, TYA
+    // -----------------------------
+
+    // TAX (Transfer Accumulator to X)
+    fn tax(&mut self) {
+        self.register_x = self.register_a;
+        self.set_zero_negative_flag(self.register_x);
+    }
+
+    // TAY (Transfer Accumulator to Y)
+    fn tay(&mut self) {
+        self.register_y = self.register_a;
+        self.set_zero_negative_flag(self.register_y);
+    }
+
+    // TXA (Transfer X to Accumulator)
+    fn txa(&mut self) {
+        self.register_a = self.register_x;
+        self.set_zero_negative_flag(self.register_a);
+    }
+
+    // TYA (Transfer Y to Accumulator)
+    fn tya(&mut self) {
+        self.register_a = self.register_y;
+        self.set_zero_negative_flag(self.register_a);
+    }
+
+    // -----------------------------
+    // System Function
+    // BRK, NOP, RTI
+    // -----------------------------
+
+    fn brk(&mut self) {
+        // self.update_break_command_flag(true);
+        self.program_counter += 1;
+    }
+
+    fn nop(&mut self) {
         self.program_counter += 1;
     }
 
@@ -268,11 +305,37 @@ impl CPU {
                 0x94 => self.sty(AddressingMode::ZeroPageX),
                 0x8C => self.sty(AddressingMode::Absolute),
 
-                // END OF LOAD / STORE Operations
+                // -----------------------------
+                // Register Transfer
+                // TAX, TAY, TXA, TYA
+                // -----------------------------
+
+                // TAX (Transfer Accumulator to X)
+                0xAA => self.tax(),
+
+                // TAY (Transfer Accumulator to Y)
+                0xA8 => self.tay(),
+
+                // TXA (Transfer X to Accumulator)
+                0x8A => self.txa(),
+
+                // TYA (Transfer Y to Accumulator)
+                0x98 => self.tya(),
+
+                // -----------------------------
+                // System Function
+                // BRK, NOP, RTI
+                // -----------------------------
+
+                // BRK (Break)
                 0x00 => {
-                    println!("BRK");
+                    self.brk();
                     break;
                 }
+
+                // NOP (No Operation)
+                0xEA => self.nop(),
+
                 _ => {
                     println!("Unrecognized opscode: {:x}", opscode);
                     break;
@@ -645,5 +708,59 @@ mod test {
         cpu.register_y = 0x37; // Set up register_y so that it contains the value 0x37
         cpu.interpret(vec![0x8c, 0x34, 0x12]); // Execute STY with absolute addressing mode
         assert_eq!(cpu.memory[0x1234], 0x37); // Check that memory address 0x1234 contains the value 0x37
+    }
+
+    // -----------------------------
+    // Register Transfer
+    // TAX, TAY, TXA, TYA
+    // -----------------------------
+
+    // TAX (Transfer Accumulator to X)
+    #[test]
+    fn test_0xaa_tax() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37; // Set up register_a so that it contains the value 0x37
+        cpu.interpret(vec![0xaa, 0x00]); // Execute TAX
+        assert_eq!(cpu.register_x, 0x37); // Check that register_x contains the value 0x37
+    }
+
+    // TAY (Transfer Accumulator to Y)
+    #[test]
+    fn test_0xa8_tay() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x37;
+        cpu.interpret(vec![0xa8, 0x00]);
+        assert_eq!(cpu.register_y, 0x37);
+    }
+
+    // TXA (Transfer X to Accumulator)
+    #[test]
+    fn test_0x8a_txa() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0x37;
+        cpu.interpret(vec![0x8a, 0x00]);
+        assert_eq!(cpu.register_a, 0x37);
+    }
+
+    // TYA (Transfer Y to Accumulator)
+    #[test]
+    fn test_0x98_tya() {
+        let mut cpu = CPU::new();
+        cpu.register_y = 0x37;
+        cpu.interpret(vec![0x98, 0x00]);
+        assert_eq!(cpu.register_a, 0x37);
+    }
+
+    // -----------------------------
+    // System Function
+    // BRK, NOP, RTI
+    // -----------------------------å
+
+    // NOP (No Operation)
+    #[test]
+    fn test_0xea_nop() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xea]);
+        assert_eq!(cpu.status, 0);
     }
 }
