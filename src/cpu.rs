@@ -58,7 +58,7 @@ impl CPU {
 
     fn read_memory(&self, address: u16) -> u8 {
         println!(
-            "addres inside readmeory {:?} {:?}",
+            "addres inside read memory {:?} {:?}",
             address, self.memory[address as usize]
         );
         self.memory[address as usize]
@@ -312,6 +312,7 @@ impl CPU {
         self.set_zero_negative_flag(self.register_a);
     }
 
+    // EOR (Exclusive OR)
     fn eor(&mut self, mode: AddressingMode) {
         let address = self.select_addressing_mode(mode);
         let value = self.read_memory(address);
@@ -320,6 +321,7 @@ impl CPU {
         self.set_zero_negative_flag(self.register_a);
     }
 
+    // ORA (Logical Inclusive OR)
     fn ora(&mut self, mode: AddressingMode) {
         let address = self.select_addressing_mode(mode);
         let value = self.read_memory(address);
@@ -330,6 +332,7 @@ impl CPU {
         self.set_zero_negative_flag(self.register_a);
     }
 
+    // BIT (Bit Test)
     fn bit(&mut self, mode: AddressingMode) {
         let address = self.select_addressing_mode(mode);
         let value = self.read_memory(address);
@@ -340,9 +343,35 @@ impl CPU {
         self.program_counter += 1;
     }
 
-    // EOR (Exclusive OR)
-    // ORA (Logical Inclusive OR)
-    // BIT (Bit Test)
+    // -----------------------------
+    // Arithmetic
+    // ADC, SBC, CMP, CPX, CPY
+    // -----------------------------
+
+    // ADC (Add with Carry)
+
+    fn adc(&mut self, mode: AddressingMode) {
+        let address = self.select_addressing_mode(mode);
+        let value = self.read_memory(address);
+
+        let carry = if self.status & Flag::Carry as u8 > 0 {
+            1
+        } else {
+            0
+        };
+
+        let result = self.register_a.wrapping_add(value).wrapping_add(carry);
+
+        self.set_flag(Flag::Carry, result as u16 >= 0x100);
+        self.set_flag(
+            Flag::Overflow,
+            (self.register_a ^ result) & (value ^ result) & 0x80 > 0,
+        );
+        self.register_a = result;
+        self.set_zero_negative_flag(self.register_a);
+
+        self.program_counter += 1;
+    }
 
     // -----------------------------
     // System Function
@@ -504,6 +533,21 @@ impl CPU {
                 0x2C => self.bit(AddressingMode::Absolute),
 
                 // -----------------------------
+                // Arithmetic
+                // ADC, SBC, CMP, CPX, CPY
+                // -----------------------------
+
+                // ADC (Add with Carry)
+                0x69 => self.adc(AddressingMode::Immediate),
+                0x65 => self.adc(AddressingMode::ZeroPage),
+                0x75 => self.adc(AddressingMode::ZeroPageX),
+                0x6D => self.adc(AddressingMode::Absolute),
+                0x7D => self.adc(AddressingMode::AbsoluteX),
+                0x79 => self.adc(AddressingMode::AbsoluteY),
+                0x61 => self.adc(AddressingMode::IndirectX),
+                0x71 => self.adc(AddressingMode::IndirectY),
+
+                // -----------------------------
                 // System Function
                 // BRK, NOP, RTI
                 // -----------------------------
@@ -557,7 +601,7 @@ mod test {
         cpu.interpret(vec![0xa9, 0xE0, 0x00]);
 
         assert_eq!(cpu.register_a, 224);
-        assert_eq!(cpu.status, 128) //
+        assert_eq!(cpu.status, 128) // negative flag set
     }
 
     // LDA ADDRESSING MODE
@@ -1276,5 +1320,121 @@ mod test {
         let mut cpu = CPU::new();
         cpu.interpret(vec![0xea]);
         assert_eq!(cpu.status, 0);
+    }
+
+    // -----------------------------
+    // Arithmetic
+    // ADC, SBC, CMP, CPX, CPY
+    // -----------------------------
+
+    // ADC (Add with Carry)
+
+    // ADC STATUS FLAG
+
+    #[test]
+    fn test_0x69_adc_immediate_with_carry_flag_set() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.status = 1; // set carry flag
+        cpu.interpret(vec![0x69, 0x05]);
+        assert_eq!(cpu.register_a, 0x0b);
+    }
+
+    #[test]
+    fn test_0x69_adc_immediate_with_overflow_flag_set() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x7f;
+        cpu.interpret(vec![0x69, 0x01]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert_eq!(cpu.status, 64); // overflow flag set
+    }
+
+    #[test]
+    fn test_0x69_adc_immediate_with_negative_flag_set() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 223;
+        cpu.interpret(vec![0x69, 0x01]);
+        assert_eq!(cpu.register_a, 224);
+        assert_eq!(cpu.status, 128); // negative flag set
+    }
+
+    // ADC ADDRESSING MODE
+
+    #[test]
+    fn test_0x69_adc_immediate() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.interpret(vec![0x69, 0x05]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x65_adc_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.memory[0x84] = 0x05;
+        cpu.interpret(vec![0x65, 0x84]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x75_adc_zero_page_x() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.register_x = 0x05;
+        cpu.memory[0x80 + cpu.register_x as usize] = 0x05;
+        cpu.interpret(vec![0x75, 0x80]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x6d_adc_absolute() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.memory[0x1234] = 0x05;
+        cpu.interpret(vec![0x6d, 0x34, 0x12]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x7d_adc_absolute_x() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.register_x = 0x05;
+        cpu.memory[0x1234 + cpu.register_x as usize] = 0x05;
+        cpu.interpret(vec![0x7d, 0x34, 0x12]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x79_adc_absolute_y() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.register_y = 0x05;
+        cpu.memory[0x1234 + cpu.register_y as usize] = 0x05;
+        cpu.interpret(vec![0x79, 0x34, 0x12]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x61_adc_indirect_x() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.register_x = 0x05;
+        cpu.memory[0x84 + cpu.register_x as usize] = 0x05;
+        cpu.memory[0x05] = 0x05;
+        cpu.interpret(vec![0x61, 0x84]);
+        assert_eq!(cpu.register_a, 0x0a);
+    }
+
+    #[test]
+    fn test_0x71_adc_indirect_y() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0x05;
+        cpu.register_y = 0x05;
+        cpu.memory[0x84] = 0x05;
+        cpu.memory[0x05] = 0x05;
+        cpu.interpret(vec![0x71, 0x84]);
+        assert_eq!(cpu.register_a, 0x0a);
     }
 }
